@@ -64,6 +64,7 @@
   .t-warn{background:rgba(251,191,36,.15);color:var(--warn)}
   .t-bad{background:rgba(248,113,113,.15);color:var(--bad)}
   .t-idle{background:rgba(154,163,178,.15);color:var(--sub)}
+  .t-info{background:rgba(79,140,255,.15);color:var(--accent)}
   .minibar{height:6px;border-radius:4px;background:var(--track);margin-top:6px;overflow:hidden;min-width:80px}
   .minibar > span{display:block;height:100%;border-radius:4px}
   .num{font-variant-numeric:tabular-nums;font-weight:600}
@@ -116,6 +117,14 @@
   .qa-sep{font-size:11px;color:var(--sub);flex-shrink:0}
   .qa-block .minibar{margin-top:4px;min-width:120px;height:5px}
   .qa-block .qa-pct{font-size:11px;color:var(--sub);margin-top:3px;font-variant-numeric:tabular-nums}
+
+  /* 质检状态行 */
+  .qa-status-row{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);
+    display:flex;flex-direction:column;gap:6px}
+  .qa-status-row .tag{font-size:10px;align-self:flex-start}
+  .qa-status-note{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:5px;
+    padding:4px 8px;font-size:11px;font-family:inherit;width:100%;outline:none;resize:vertical;min-height:30px}
+  .qa-status-note:focus{border-color:var(--accent)}
 
   /* 提交算法 */
 
@@ -288,24 +297,28 @@ const DEFAULT_DATA = {
       status:"风险", statusNote:"已更换发音人,排期确认中",
       recorded:0, cut:null, transcript:null, pinyin:null,
       qaAudioDone:0, qaAudioTotal:0, qaTranscriptDone:0, qaTranscriptTotal:0, qaPinyinDone:0, qaPinyinTotal:0,
+      qaStatus:"待新数据返回", qaStatusNote:"",
       algoAudioH:null, algoTranscriptH:null, algoPinyinH:null,
       eta:"排期确认中" },
     { id:"发音人 b", key:"b", vendor:"数据堂", feature:"偏广州口音,元气、年轻、服务感,讨好感,语速较慢偏播音",
       status:"进行中", statusNote:"工作6小时约产出50min",
       recorded:2.3, cut:1.58, transcript:null, pinyin:null,
       qaAudioDone:0, qaAudioTotal:0, qaTranscriptDone:0, qaTranscriptTotal:0, qaPinyinDone:0, qaPinyinTotal:0,
+      qaStatus:"进行中", qaStatusNote:"",
       algoAudioH:null, algoTranscriptH:null, algoPinyinH:null,
       eta:"预计 6.6 完成" },
     { id:"发音人 c", key:"c", vendor:"标贝", feature:"偏广州口音,tv现场/街坊,亲和力较强,语速偏慢",
       status:"进行中", statusNote:"前三次进棚每天产出约30min,后续存在数据爬坡期",
       recorded:0.83, cut:null, transcript:null, pinyin:null,
       qaAudioDone:0, qaAudioTotal:0, qaTranscriptDone:0, qaTranscriptTotal:0, qaPinyinDone:0, qaPinyinTotal:0,
+      qaStatus:"待新数据返回", qaStatusNote:"",
       algoAudioH:null, algoTranscriptH:null, algoPinyinH:null,
       eta:"预计 6.10 完成" },
     { id:"发音人 d", key:"d", vendor:"澳鹏", feature:"偏香港口音,温婉、亲和力强、邻家姐姐,低攻击性",
       status:"进行中", statusNote:"一天工作4时最少产出1小时,产出能力较强",
       recorded:2.2, cut:2.2, transcript:null, pinyin:null,
       qaAudioDone:0, qaAudioTotal:0, qaTranscriptDone:0, qaTranscriptTotal:0, qaPinyinDone:0, qaPinyinTotal:0,
+      qaStatus:"进行中", qaStatusNote:"",
       algoAudioH:null, algoTranscriptH:null, algoPinyinH:null,
       eta:"预计 6.10 完成" },
   ]
@@ -342,6 +355,9 @@ function migrateData(d){
     if(s.algoAudioH===undefined) s.algoAudioH = null;
     if(s.algoTranscriptH===undefined) s.algoTranscriptH = null;
     if(s.algoPinyinH===undefined) s.algoPinyinH = null;
+    // v8:质检状态行
+    if(s.qaStatus===undefined) s.qaStatus = "待新数据返回";
+    if(s.qaStatusNote===undefined) s.qaStatusNote = "";
     // 清掉过期字段
     delete s.qa;
     delete s.algo;
@@ -525,6 +541,12 @@ function render(){
             <div class="qa-pct">${p}%</div>
           </div>`;
         }).join("")}
+        <div class="qa-status-row">
+          <span class="tag ${QA_STATUS_CLASS[s.qaStatus]||"t-idle"}" onclick="cycleQaStatus(${idx})">${s.qaStatus||"待新数据返回"}</span>
+          <textarea class="qa-status-note" rows="2" placeholder="质检状态说明..."
+            data-bind="qaStatusNote" data-idx="${idx}" data-type="text"
+            onchange="updateQaNote(${idx},this.value)" onfocus="this.select()">${s.qaStatusNote||""}</textarea>
+        </div>
       </td>`;
     // 子项td(按时长模式):每个子项有 单值h input,目标 target 小时
     const renderHoursCell = (subs) => `<td class="field-cell qa-cell">
@@ -579,6 +601,15 @@ function render(){
 
 /* ====================== 行内编辑 ====================== */
 const STATUS_CYCLE = ["未启动","进行中","风险","完成"];
+const QA_STATUS_CYCLE = ["进行中","暂停","待新数据返回","完成"];
+const QA_STATUS_CLASS = {"进行中":"t-good","暂停":"t-bad","待新数据返回":"t-warn","完成":"t-info"};
+function cycleQaStatus(idx){
+  const s = DATA.speakers[idx];
+  const ci = QA_STATUS_CYCLE.indexOf(s.qaStatus);
+  s.qaStatus = QA_STATUS_CYCLE[(ci+1) % QA_STATUS_CYCLE.length];
+  saveData(); render();
+}
+function updateQaNote(idx, val){ DATA.speakers[idx].qaStatusNote = val; saveData(); }
 function cycleStatus(idx){
   const s = DATA.speakers[idx];
   const ci = STATUS_CYCLE.indexOf(s.status);
